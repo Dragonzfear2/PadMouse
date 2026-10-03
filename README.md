@@ -1,11 +1,12 @@
 # PadMouse
 
-**Use your Xbox controller as a mouse and keyboard on Windows.** PadMouse runs quietly in the system tray, so you can browse, watch videos and control your PC from the sofa. It steps aside automatically when you launch a game.
+**Use your game controller (Xbox, PlayStation, Switch and more) as a mouse and keyboard on Windows.** PadMouse runs quietly in the system tray, so you can browse, watch videos and control your PC from the sofa. It steps aside automatically when you launch a game.
 
 ![PadMouse settings](docs/screenshot-sticks.png)
 
 ## Features
 
+- **Works with most controllers:** Xbox, PlayStation (DualShock 4 / DualSense), Nintendo Switch Pro and most other USB or Bluetooth pads. A quick set-up wizard handles controllers it doesn't recognise, and button names in Settings match your controller.
 - **Mouse control:** the left stick moves the cursor, the right stick scrolls, A clicks and B right-clicks. Hold LT for a slow, precise cursor.
 - **On-screen keyboard:** press Y to type with the D-pad. The keyboard never steals focus, so text goes into the window you were using.
 - **Remap anything:** click a button on the controller picture, or press it on the controller itself, then pick a mouse action or any key combination.
@@ -30,7 +31,20 @@
 
 Windows may say "Windows protected your PC" because PadMouse isn't code-signed yet. Click **More info → Run anyway**. See [docs/SIGNING.md](docs/SIGNING.md) for why.
 
-PadMouse needs Windows 10 or 11, which already include .NET Framework 4.8, and an Xbox (XInput) controller, either wired or wireless.
+PadMouse needs 64-bit Windows 10 or 11, which already include .NET Framework 4.8, and a game controller, wired or wireless.
+
+## Controllers
+
+| Controller | How to connect |
+|---|---|
+| Xbox (One, Series, 360) | USB, Bluetooth or the Xbox wireless adapter |
+| PlayStation 4 / 5 (DualShock 4, DualSense) | USB cable, or pair in Windows Bluetooth settings |
+| Nintendo Switch Pro / Joy-Cons | Pair in Windows Bluetooth settings, or USB |
+| Other controllers | Plug in. If PadMouse says "needs set-up", run the set-up wizard from Settings → Controllers |
+
+With several controllers connected, PadMouse follows whichever one you pressed a button on last. The first press on a newly picked-up controller only switches to it.
+
+On PlayStation controllers, ✕ = A, ○ = B, □ = X, △ = Y, L1/R1 = LB/RB, L2/R2 = LT/RT, Share = View and Options = Menu.
 
 ## Default controls
 
@@ -73,4 +87,4 @@ Each push to `main` is built by GitHub Actions. Pushing a tag such as `v1.2.0` p
 
 ## Licence
 
-MIT. Xbox is a trademark of Microsoft. PadMouse isn't affiliated with or endorsed by Microsoft.
+MIT. Includes SDL 2 (zlib licence); see [docs/THIRD-PARTY.md](docs/THIRD-PARTY.md). Xbox is a trademark of Microsoft. PadMouse isn't affiliated with or endorsed by Microsoft.

@@ -24,6 +24,9 @@ namespace PadMouse
         WelcomeForm welcome;
         UpdateInfo availableUpdate;
         bool lowBatteryWarned;
+        bool balloonOpensControllers;
+        readonly System.Collections.Generic.HashSet<int> announcedUnknown = new System.Collections.Generic.HashSet<int>();
+        readonly System.Windows.Forms.Timer padWatch = new System.Windows.Forms.Timer { Interval = 2000 };
         bool exiting;
 
         public PadEngine Engine { get { return engine; } }
@@ -71,7 +74,7 @@ namespace PadMouse
             menu.Items.Add("Settings…", null, delegate { ShowSettings(0); });
             menu.Items.Add("Welcome guide", null, delegate { ShowWelcome(); });
             menu.Items.Add(updateItem);
-            menu.Items.Add("About PadMouse", null, delegate { ShowSettings(5); });
+            menu.Items.Add("About PadMouse", null, delegate { ShowSettings(6); });
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Exit", null, delegate { ExitApp(); });
             menu.Opening += delegate { RebuildProfileMenu(); UpdateTray(); };
@@ -79,7 +82,7 @@ namespace PadMouse
             // Set the icon before making it visible, otherwise Windows may not add it to the tray.
             tray = new NotifyIcon { ContextMenuStrip = menu, Icon = engine.Enabled ? iconOn : iconOff, Text = "PadMouse" };
             tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) ShowSettings(0); };
-            tray.BalloonTipClicked += delegate { if (availableUpdate != null) ShowSettings(5); };
+            tray.BalloonTipClicked += delegate { if (balloonOpensControllers) ShowSettings(4); else if (availableUpdate != null) ShowSettings(6); balloonOpensControllers = false; };
             tray.Visible = true;
             UpdateTray();
 
@@ -93,6 +96,8 @@ namespace PadMouse
             XInput.TryGetState(0, out probe);   // makes XInput.Available meaningful below
             engine.Start();
             watcher.Start();
+            padWatch.Tick += delegate { CheckUnknownControllers(); };
+            padWatch.Start();
 
             // ---- startup messages
             if (error != null)
@@ -132,10 +137,11 @@ namespace PadMouse
         void OnConnectionChanged(bool connected)
         {
             lowBatteryWarned = false;
+            if (connected) Names.Family = (PadFamily)engine.ActiveFamily;
             UpdateTray();
             if ((DateTime.Now - startedAt).TotalSeconds < 4) return; // startup message already shown
             if (cfg.ShowOsd)
-                osd.ShowMessage(connected ? "Controller connected" : "Controller disconnected", connected ? (engine.Enabled ? CurrentProfileName : "PadMouse is off") : "", connected ? Theme.Accent : Theme.Warning);
+                osd.ShowMessage(connected ? (string.IsNullOrEmpty(engine.ActiveName) ? "Controller connected" : engine.ActiveName) : "Controller disconnected", connected ? (engine.Enabled ? CurrentProfileName : "PadMouse is off") : "", connected ? Theme.Accent : Theme.Warning);
         }
 
         void OnProfileChanged(int idx, bool manual)
@@ -162,6 +168,18 @@ namespace PadMouse
                 if (cfg.ShowOsd) osd.ShowMessage("Controller battery low", "Charge it soon", Theme.Warning);
             }
             if (!low) lowBatteryWarned = false;
+        }
+
+        /// <summary>Offers the set-up wizard when a controller PadMouse doesn't recognise is plugged in.</summary>
+        void CheckUnknownControllers()
+        {
+            foreach (var pi in engine.Pads.Connected)
+            {
+                if (!pi.NeedsSetup || announcedUnknown.Contains(pi.InstanceId)) continue;
+                announcedUnknown.Add(pi.InstanceId);
+                balloonOpensControllers = true;
+                Balloon("New controller: " + pi.Name, "PadMouse doesn't know this one yet. Click here to set it up (takes a minute).");
+            }
         }
 
         string CurrentProfileName
@@ -216,7 +234,8 @@ namespace PadMouse
             {
                 if (settings.WindowState == FormWindowState.Minimized) settings.WindowState = FormWindowState.Normal;
                 settings.Activate();
-                if (page == 5) settings.ShowAbout();
+                if (page == 6) settings.ShowAbout();
+                if (page == 4) settings.ShowControllers();
                 return;
             }
             settings = new SettingsForm(this, cfg.Clone(), page);
@@ -328,6 +347,7 @@ namespace PadMouse
         {
             if (exiting) return;
             exiting = true;
+            padWatch.Stop();
             engine.Stop();
             watcher.Dispose();
             tray.Visible = false;

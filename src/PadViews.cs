@@ -158,8 +158,8 @@ namespace PadMouse
             Color key = Color.FromArgb(34, 37, 46);
 
             // triggers (behind the body)
-            DrawRound(g, hit[PadButton.LT], 10, StateFill(PadButton.LT, key), "LT");
-            DrawRound(g, hit[PadButton.RT], 10, StateFill(PadButton.RT, key), "RT");
+            DrawRound(g, hit[PadButton.LT], 10, StateFill(PadButton.LT, key), Names.Short(PadButton.LT));
+            DrawRound(g, hit[PadButton.RT], 10, StateFill(PadButton.RT, key), Names.Short(PadButton.RT));
 
             // body
             using (var body = new GraphicsPath())
@@ -173,8 +173,8 @@ namespace PadMouse
             }
 
             // bumpers sit on the top edge
-            DrawRound(g, hit[PadButton.LB], 12, StateFill(PadButton.LB, key), "LB");
-            DrawRound(g, hit[PadButton.RB], 12, StateFill(PadButton.RB, key), "RB");
+            DrawRound(g, hit[PadButton.LB], 12, StateFill(PadButton.LB, key), Names.Short(PadButton.LB));
+            DrawRound(g, hit[PadButton.RB], 12, StateFill(PadButton.RB, key), Names.Short(PadButton.RB));
 
             // guide button
             using (var b = new SolidBrush(Color.FromArgb(30, 32, 40))) g.FillEllipse(b, 282, 88, 36, 36);
@@ -234,13 +234,14 @@ namespace PadMouse
         void DrawFace(Graphics g, PadButton b, Color c)
         {
             var r = hit[b];
+            c = Names.FaceColour(b, c);
             Color fill = IsPressed(b) ? Theme.Accent : (SelectedButton.HasValue && SelectedButton.Value == b) ? Theme.Selection : Color.FromArgb(26, 28, 35);
             if (hover.HasValue && hover.Value == b && !IsPressed(b)) fill = ControlPaint.Light(fill, 0.4f);
             using (var br = new SolidBrush(fill)) g.FillEllipse(br, r);
             using (var f = new Font("Segoe UI Semibold", 15f, GraphicsUnit.Pixel))
             using (var tb = new SolidBrush(IsPressed(b) ? Color.White : c))
             using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
-                g.DrawString(b.ToString(), f, tb, r, sf);
+                g.DrawString(Names.Face(b), f, tb, r, sf);
         }
 
         // ------------------------------------------------------------ annotations
@@ -291,29 +292,79 @@ namespace PadMouse
         }
     }
 
+    /// <summary>Button names that match the controller in use (Xbox, PlayStation, Nintendo).</summary>
     public static class Names
     {
-        public static string Of(PadButton b)
+        /// <summary>Set by the UI from the engine's active controller.</summary>
+        public static PadFamily Family = PadFamily.Xbox;
+
+        /// <summary>Text drawn on the face buttons.</summary>
+        public static string Face(PadButton b)
         {
+            if (Family == PadFamily.PlayStation)
+                switch (b) { case PadButton.A: return "\u2715"; case PadButton.B: return "\u25CB"; case PadButton.X: return "\u25A1"; case PadButton.Y: return "\u25B3"; }
+            if (Family == PadFamily.Nintendo)   // positions stay Xbox-style; Nintendo prints the letters swapped
+                switch (b) { case PadButton.A: return "B"; case PadButton.B: return "A"; case PadButton.X: return "Y"; case PadButton.Y: return "X"; }
+            return b.ToString();
+        }
+
+        public static Color FaceColour(PadButton b, Color xbox)
+        {
+            if (Family == PadFamily.PlayStation)
+                switch (b)
+                {
+                    case PadButton.A: return Color.FromArgb(125, 163, 232);
+                    case PadButton.B: return Color.FromArgb(232, 107, 107);
+                    case PadButton.X: return Color.FromArgb(214, 140, 200);
+                    case PadButton.Y: return Color.FromArgb(94, 196, 160);
+                }
+            if (Family == PadFamily.Nintendo || Family == PadFamily.Generic) return Color.FromArgb(220, 222, 228);
+            return xbox;
+        }
+
+        /// <summary>Short label: LB / L1 / L ...</summary>
+        public static string Short(PadButton b)
+        {
+            bool ps = Family == PadFamily.PlayStation, nin = Family == PadFamily.Nintendo;
             switch (b)
             {
-                case PadButton.Back: return "View";
-                case PadButton.Start: return "Menu";
+                case PadButton.LB: return ps ? "L1" : nin ? "L" : "LB";
+                case PadButton.RB: return ps ? "R1" : nin ? "R" : "RB";
+                case PadButton.LT: return ps ? "L2" : nin ? "ZL" : "LT";
+                case PadButton.RT: return ps ? "R2" : nin ? "ZR" : "RT";
+                case PadButton.Back: return ps ? "Share" : nin ? "\u2212" : "View";
+                case PadButton.Start: return ps ? "Options" : nin ? "+" : "Menu";
+                case PadButton.A: case PadButton.B: case PadButton.X: case PadButton.Y: return Face(b);
+                default: return b.ToString();
+            }
+        }
+
+        public static string Of(PadButton b)
+        {
+            bool ps = Family == PadFamily.PlayStation, nin = Family == PadFamily.Nintendo;
+            switch (b)
+            {
+                case PadButton.A: return ps ? "\u2715 Cross" : nin ? "B (bottom)" : "A";
+                case PadButton.B: return ps ? "\u25CB Circle" : nin ? "A (right)" : "B";
+                case PadButton.X: return ps ? "\u25A1 Square" : nin ? "Y (left)" : "X";
+                case PadButton.Y: return ps ? "\u25B3 Triangle" : nin ? "X (top)" : "Y";
+                case PadButton.Back: return ps ? "Share / Create" : nin ? "\u2212 (minus)" : "View";
+                case PadButton.Start: return ps ? "Options" : nin ? "+ (plus)" : "Menu";
                 case PadButton.L3: return "L3 (left stick press)";
                 case PadButton.R3: return "R3 (right stick press)";
                 case PadButton.DPadUp: return "D-pad up";
                 case PadButton.DPadDown: return "D-pad down";
                 case PadButton.DPadLeft: return "D-pad left";
                 case PadButton.DPadRight: return "D-pad right";
-                case PadButton.LT: return "LT (left trigger)";
-                case PadButton.RT: return "RT (right trigger)";
-                case PadButton.LB: return "LB (left bumper)";
-                case PadButton.RB: return "RB (right bumper)";
+                case PadButton.LT: return ps ? "L2 (left trigger)" : nin ? "ZL (left trigger)" : "LT (left trigger)";
+                case PadButton.RT: return ps ? "R2 (right trigger)" : nin ? "ZR (right trigger)" : "RT (right trigger)";
+                case PadButton.LB: return ps ? "L1 (left bumper)" : nin ? "L (left bumper)" : "LB (left bumper)";
+                case PadButton.RB: return ps ? "R1 (right bumper)" : nin ? "R (right bumper)" : "RB (right bumper)";
                 default: return b.ToString();
             }
         }
 
-        /// <summary>"Back+Start" → "View + Menu".</summary>
+        /// <summary>"Back+Start" → "View + Menu" (or "Share + Options" on PlayStation).</summary>
         public static string Combo(string combo)
         {
             if (string.IsNullOrEmpty(combo) || combo.Equals("None", StringComparison.OrdinalIgnoreCase)) return "(none)";
@@ -321,12 +372,20 @@ namespace PadMouse
             for (int i = 0; i < parts.Length; i++)
             {
                 PadButton b;
-                if (Enum.TryParse(parts[i].Trim(), true, out b))
-                {
-                    parts[i] = b == PadButton.Back ? "View" : b == PadButton.Start ? "Menu" : b.ToString();
-                }
+                if (Enum.TryParse(parts[i].Trim(), true, out b)) parts[i] = Short(b);
             }
             return string.Join(" + ", parts);
+        }
+
+        public static string FamilyName(PadFamily f)
+        {
+            switch (f)
+            {
+                case PadFamily.PlayStation: return "PlayStation";
+                case PadFamily.Nintendo: return "Nintendo";
+                case PadFamily.Generic: return "Other";
+                default: return "Xbox";
+            }
         }
 
         public static string Battery(int type, int level)

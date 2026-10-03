@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0
+
+- **More controllers:** PlayStation (DualShock 4, DualSense, DualShock 3), Nintendo Switch Pro, Joy-Cons and most other USB or Bluetooth controllers now work, as well as Xbox. This uses the bundled SDL 2 library.
+- **Follows the controller you're using:** with several controllers connected, PadMouse uses whichever one you last pressed a button on.
+- **Button names match your controller:** the Settings window shows Cross/Circle/Square/Triangle, L1/R1/L2/R2, Share/Options on PlayStation, and the Nintendo equivalents.
+- **Rumble and battery level** now work on PlayStation and Switch controllers too, where the controller supports them.
+- **New Controllers page in Settings:** lists everything that's connected and shows which controller is in use.
+- **Set-up wizard for unknown controllers:** press each button when asked, and the controller is remembered from then on. PadMouse offers this automatically when it finds a controller it doesn't recognise.
+
 ## 1.1.0
 
 - **New Settings window:** dark theme with a sidebar.

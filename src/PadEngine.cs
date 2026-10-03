@@ -28,7 +28,15 @@ namespace PadMouse
         volatile bool running;
         volatile int activeProfile;
         public volatile bool OskVisible;
-        public volatile int ConnectedSlot = -1;
+        public volatile int ConnectedSlot = -1;               // 0 when a controller is connected, -1 otherwise
+        public volatile string ActiveName = "";
+        public volatile int ActiveFamily = (int)PadFamily.Xbox;
+        public readonly PadManager Pads = new PadManager();
+
+        // set-up wizard requests (handled on the engine thread)
+        volatile int pendingRaw = int.MinValue;            // MinValue = none, -1 = stop, else SDL instance id
+        volatile string pendingMapping;
+        public event Action<bool, string> MappingAdded;     // ok, error
         public volatile uint LiveMask;
         public volatile int LiveLX, LiveLY, LiveRX, LiveRY;   // raw stick values
         public volatile int LiveLT, LiveRT;                   // 0..255
@@ -65,7 +73,7 @@ namespace PadMouse
         bool ltDown, rtDown;
         bool chordConsumed;
         bool modeChanged;
-        double nextScan, nextBattery;
+        double nextBattery;
 
         readonly bool[] held = new bool[ButtonCount];
         readonly double[] nextRepeat = new double[ButtonCount];
@@ -109,6 +117,10 @@ namespace PadMouse
         /// <summary>Pause (e.g. while a fullscreen game is in front). Unlike Enabled, it ignores the controller completely.</summary>
         public void SetPaused(bool p) { paused = p; }
 
+        /// <summary>Start (instance id) or stop (-1) streaming raw readings for the set-up wizard.</summary>
+        public void RequestRawCapture(int instanceId) { pendingRaw = instanceId; }
+        public void RequestAddMapping(string mapping) { pendingMapping = mapping; }
+
         // ------------------------------------------------------------------ loop
 
         void Run()
@@ -116,6 +128,7 @@ namespace PadMouse
             try { Win32.timeBeginPeriod(1); } catch { }
             var sw = Stopwatch.StartNew();
             double last = 0;
+            try { Pads.Init(); } catch (Exception ex) { Log(ex); }
             try
             {
                 while (running)
@@ -131,7 +144,8 @@ namespace PadMouse
             finally
             {
                 ReleaseAll();
-                if (ConnectedSlot >= 0) XInput.Vibrate(ConnectedSlot, 0, 0);
+                if (Pads.Active != null) Pads.Active.Rumble(0, 0);
+                try { Pads.Shutdown(); } catch { }
                 try { Win32.timeEndPeriod(1); } catch { }
             }
         }
@@ -159,41 +173,55 @@ namespace PadMouse
             if (!active && wasActive) ReleaseAll();
             wasActive = active;
 
-            if (rumbleOffAt >= 0 && now >= rumbleOffAt) { XInput.Vibrate(ConnectedSlot, 0, 0); rumbleOffAt = -1; }
-
-            // Find a controller (scan once a second while none is connected).
-            XInputState st;
-            if (ConnectedSlot < 0)
+            // Wizard requests
+            int pr = pendingRaw;
+            if (pr != int.MinValue) { pendingRaw = int.MinValue; if (pr < 0) Pads.StopRaw(); else Pads.StartRaw(pr); }
+            string pm = pendingMapping;
+            if (pm != null)
             {
-                if (now < nextScan) return;
-                nextScan = now + 1.0;
-                for (int i = 0; i < 4; i++)
-                {
-                    if (XInput.TryGetState(i, out st))
-                    {
-                        ConnectedSlot = i;
-                        prevMask = 0; chordConsumed = false;
-                        nextBattery = now;
-                        Raise(ConnectionChanged, true);
-                        break;
-                    }
-                }
-                if (ConnectedSlot < 0) return;
+                pendingMapping = null;
+                string err;
+                bool ok = Pads.AddMapping(pm, out err);
+                var h = MappingAdded; if (h != null) h(ok, err);
             }
-            if (!XInput.TryGetState(ConnectedSlot, out st))
+
+            // Read whichever controller is in use (XInput, PlayStation, Switch, generic...).
+            XInputGamepad g;
+            bool changed;
+            Pad before = Pads.Active;
+            bool connected = Pads.Update(now, out g, out changed);
+            if (changed && before != null && before != Pads.Active) { try { before.Rumble(0, 0); } catch { } rumbleOffAt = -1; }
+            if (rumbleOffAt >= 0 && now >= rumbleOffAt) { if (Pads.Active != null) Pads.Active.Rumble(0, 0); rumbleOffAt = -1; }
+
+            if (!connected)
             {
-                ConnectedSlot = -1;
-                ReleaseAll();
-                prevMask = 0; LiveMask = 0;
-                LiveLX = LiveLY = LiveRX = LiveRY = LiveLT = LiveRT = 0;
-                BatteryType = BatteryLevel = -1;
-                Raise(ConnectionChanged, false);
+                if (ConnectedSlot >= 0)
+                {
+                    ConnectedSlot = -1;
+                    ReleaseAll();
+                    prevMask = 0; LiveMask = 0;
+                    LiveLX = LiveLY = LiveRX = LiveRY = LiveLT = LiveRT = 0;
+                    BatteryType = BatteryLevel = -1;
+                    ActiveName = "";
+                    Raise(ConnectionChanged, false);
+                }
                 return;
+            }
+            if (changed || ConnectedSlot < 0)
+            {
+                bool wasConnected = ConnectedSlot >= 0;
+                if (wasConnected) ReleaseAll();
+                ConnectedSlot = 0;
+                prevMask = ReadButtons(g); chordConsumed = (prevMask & chordUnion) != 0;   // buttons already held on the new pad don't fire
+                ActiveName = Pads.Active.Name;
+                ActiveFamily = (int)Pads.Active.Family;
+                BatteryType = BatteryLevel = -1;
+                nextBattery = now;
+                Raise(ConnectionChanged, true);
             }
 
             if (now >= nextBattery) { nextBattery = now + 30; PollBattery(); }
 
-            var g = st.Gamepad;
             uint mask = ReadButtons(g);
             LiveMask = mask;
             LiveLX = g.sThumbLX; LiveLY = g.sThumbLY; LiveRX = g.sThumbRX; LiveRY = g.sThumbRY;
@@ -280,7 +308,7 @@ namespace PadMouse
         void PollBattery()
         {
             int type, level;
-            if (!XInput.TryGetBattery(ConnectedSlot, out type, out level)) return;
+            if (Pads.Active == null || !Pads.Active.TryBattery(out type, out level)) return;
             if (type != BatteryType || level != BatteryLevel)
             {
                 BatteryType = type; BatteryLevel = level;
@@ -291,7 +319,7 @@ namespace PadMouse
         double Rumble(double now, ushort left, ushort right, double secs)
         {
             if (!cfg.Rumble) return rumbleOffAt;
-            XInput.Vibrate(ConnectedSlot, left, right);
+            if (Pads.Active != null) Pads.Active.Rumble(left, right);
             return now + secs;
         }
 
@@ -325,6 +353,7 @@ namespace PadMouse
         }
 
         public static uint Bit(PadButton b) { return 1u << (int)b; }
+
 
         // ------------------------------------------------------------------ normal (mouse) mode
 

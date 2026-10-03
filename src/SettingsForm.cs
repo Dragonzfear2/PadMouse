@@ -109,6 +109,7 @@ namespace PadMouse
             nav.Add("◎", "Sticks & cursor");
             nav.Add("☰", "Profiles");
             nav.Add("⏸", "Games & pausing");
+            nav.Add("◈", "Controllers");
             nav.Add("⚙", "General");
             nav.Add("ⓘ", "About");
             nav.SelectedChanged += delegate { ShowPage(nav.Selected); };
@@ -121,6 +122,7 @@ namespace PadMouse
             pages.Add(BuildSticksPage());
             pages.Add(BuildProfilesPage());
             pages.Add(BuildPausePage());
+            pages.Add(BuildControllersPage());
             pages.Add(BuildGeneralPage());
             pages.Add(BuildAboutPage());
             foreach (var p in pages) { p.Dock = DockStyle.Fill; p.Visible = false; content.Controls.Add(p); }
@@ -292,6 +294,15 @@ namespace PadMouse
             var eng = host.Engine;
             uint mask = eng.ConnectedSlot >= 0 ? eng.LiveMask : 0;
 
+            var fam = (PadFamily)eng.ActiveFamily;
+            if (eng.ConnectedSlot >= 0 && fam != Names.Family && !wizardOpen)
+            {
+                Names.Family = fam;
+                selName.Text = Names.Of(selected);
+                pad.Invalidate(); mappings.Invalidate();
+            }
+            if (pages[4].Visible) RefreshControllers(false);
+
             if (pages[0].Visible)
             {
                 pad.PressedMask = mask;
@@ -321,7 +332,7 @@ namespace PadMouse
             if (eng.ConnectedSlot < 0) s = "⚠  No controller detected: plug in or pair your Xbox controller";
             else
             {
-                s = "●  Controller connected";
+                s = "●  " + (string.IsNullOrEmpty(eng.ActiveName) ? "Controller connected" : eng.ActiveName);
                 string bat = Names.Battery(eng.BatteryType, eng.BatteryLevel);
                 if (bat.Length > 0) s += "  ·  " + bat;
                 s += "  ·  Profile: " + work.Profiles[Math.Min(eng.ActiveProfile, work.Profiles.Count - 1)].Name;
@@ -719,6 +730,105 @@ namespace PadMouse
             if (pauseStatus.Text != s) pauseStatus.Text = s;
         }
 
+        // ================================================================== page: controllers
+
+        ListBox padList;
+        FlatButton setupBtn;
+        Label sdlNote;
+        PadInfo[] shownPads;
+        bool wizardOpen;
+
+        Panel BuildControllersPage()
+        {
+            var p = NewPage("Controllers", "Xbox, PlayStation (DualShock 4 / DualSense), Nintendo Switch Pro and most USB or Bluetooth controllers work.");
+            int x = ContentPad;
+            p.Controls.Add(Caption("Connected now (PadMouse follows whichever one you used last)", x, 100, 600));
+            padList = new ListBox { Location = new Point(x, 124), Size = new Size(560, 230), DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 52, IntegralHeight = false };
+            padList.DrawItem += DrawPadItem;
+            padList.SelectedIndexChanged += delegate { UpdateSetupButton(); };
+            padList.DoubleClick += delegate { if (setupBtn.Enabled) RunWizard(); };
+            p.Controls.Add(padList);
+
+            setupBtn = Btn("Set up this controller…", x + 576, 124, 220, true);
+            setupBtn.Enabled = false;
+            setupBtn.Click += delegate { RunWizard(); };
+            p.Controls.Add(setupBtn);
+            var forget = Btn("Forget saved set-ups", x + 576, 168, 220);
+            forget.Click += delegate
+            {
+                if (MessageBox.Show(this, "Forget the controllers you've set up by hand? You can set them up again any time. (Takes effect after PadMouse restarts.)", "PadMouse", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+                try { System.IO.File.Delete(PadManager.MappingsFile); } catch { }
+            };
+            p.Controls.Add(forget);
+
+            sdlNote = Note("", x, 364, 796, 40);
+            p.Controls.Add(sdlNote);
+
+            p.Controls.Add(Heading("Good to know", x, 414));
+            p.Controls.Add(Note(
+                "• PlayStation and Switch controllers: connect by USB cable or pair them in Windows Bluetooth settings.\n" +
+                "• Button names on the Buttons page change to match your controller (Cross/Circle, L1/R1 and so on).\n" +
+                "• If you use DS4Windows, Steam Input or similar, PadMouse sees an Xbox controller. That works too.\n" +
+                "• A controller marked \"needs set-up\" isn't known to PadMouse yet. Set it up once and it's remembered.\n" +
+                "• Picking up a different controller and pressing a button switches to it (that first press is ignored).",
+                x, 442, 796, 110));
+            return p;
+        }
+
+        void RefreshControllers(bool force)
+        {
+            var list = host.Engine.Pads.Connected;
+            if (!force && ReferenceEquals(list, shownPads)) return;
+            shownPads = list;
+            int sel = padList.SelectedIndex;
+            padList.Items.Clear();
+            foreach (var pi in list) padList.Items.Add(pi.Name);
+            if (padList.Items.Count == 0) padList.Items.Add("(none)");
+            padList.SelectedIndex = Math.Min(Math.Max(sel, 0), padList.Items.Count - 1);
+            var pm = host.Engine.Pads;
+            sdlNote.Text = pm.SdlProblem != null ? "Only Xbox controllers can be used on this PC right now (" + pm.SdlProblem + ")." : "";
+            sdlNote.ForeColor = Theme.Warning;
+            UpdateSetupButton();
+        }
+
+        void UpdateSetupButton()
+        {
+            int i = padList.SelectedIndex;
+            setupBtn.Enabled = shownPads != null && i >= 0 && i < shownPads.Length && shownPads[i].NeedsSetup;
+        }
+
+        void DrawPadItem(object sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0) return;
+            var g = e.Graphics;
+            bool sel = (e.State & DrawItemState.Selected) != 0;
+            using (var b = new SolidBrush(sel ? Theme.Surface2 : Theme.Surface)) g.FillRectangle(b, e.Bounds);
+            if (shownPads == null || e.Index >= shownPads.Length)
+            {
+                TextRenderer.DrawText(g, "No controllers connected", Font, new Rectangle(e.Bounds.X + 16, e.Bounds.Y, e.Bounds.Width - 20, e.Bounds.Height), Theme.TextMuted, TextFormatFlags.VerticalCenter);
+                return;
+            }
+            var pi = shownPads[e.Index];
+            if (pi.Active) using (var b = new SolidBrush(Theme.Accent)) g.FillRectangle(b, e.Bounds.X, e.Bounds.Y + 10, 3, e.Bounds.Height - 20);
+            TextRenderer.DrawText(g, pi.Name, Font, new Rectangle(e.Bounds.X + 16, e.Bounds.Y + 6, e.Bounds.Width - 140, 22), Theme.Text, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            using (var f = Theme.UiFont(8.5f))
+                TextRenderer.DrawText(g, Names.FamilyName(pi.Family) + " controller", f, new Rectangle(e.Bounds.X + 16, e.Bounds.Y + 28, 300, 18), Theme.TextMuted, TextFormatFlags.NoPrefix);
+            string tag = pi.NeedsSetup ? "needs set-up" : pi.Active ? "in use" : "connected";
+            Color tc = pi.NeedsSetup ? Theme.Warning : pi.Active ? Theme.Accent : Theme.TextMuted;
+            using (var f = Theme.UiFont(8.5f))
+                TextRenderer.DrawText(g, tag, f, new Rectangle(e.Bounds.Right - 120, e.Bounds.Y, 108, e.Bounds.Height), tc, TextFormatFlags.VerticalCenter | TextFormatFlags.Right);
+        }
+
+        void RunWizard()
+        {
+            int i = padList.SelectedIndex;
+            if (shownPads == null || i < 0 || i >= shownPads.Length || !shownPads[i].NeedsSetup) return;
+            wizardOpen = true;
+            using (var w = new MappingWizard(host.Engine, shownPads[i])) w.ShowDialog(this);
+            wizardOpen = false;
+            RefreshControllers(true);
+        }
+
         // ================================================================== page: general
 
         Panel BuildGeneralPage()
@@ -858,7 +968,8 @@ namespace PadMouse
             installUpdateBtn.Visible = info.DownloadUrl != null;
         }
 
-        public void ShowAbout() { nav.Selected = 5; }
+        public void ShowAbout() { nav.Selected = 6; }
+        public void ShowControllers() { nav.Selected = 4; }
 
         static void Open(string target) { try { Process.Start(target); } catch { } }
     }

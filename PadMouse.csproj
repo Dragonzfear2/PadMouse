@@ -12,4 +12,7 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="lib\SDL2.dll" LogicalName="SDL2.dll" />
+  </ItemGroup>
 </Project>

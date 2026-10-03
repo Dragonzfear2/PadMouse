@@ -8,7 +8,7 @@ set CSC=%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe
 if not exist "%CSC%" set CSC=%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe
 if not exist "%CSC%" (echo Could not find csc.exe from .NET Framework 4.x & exit /b 1)
 if not exist dist mkdir dist
-"%CSC%" /nologo /target:winexe /optimize+ /platform:anycpu /codepage:65001 /out:dist\PadMouse.exe /win32icon:src\app.ico /r:System.Windows.Forms.dll /r:System.Drawing.dll src\*.cs
+"%CSC%" /nologo /target:winexe /optimize+ /platform:anycpu /codepage:65001 /out:dist\PadMouse.exe /win32icon:src\app.ico /resource:lib\SDL2.dll,SDL2.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll src\*.cs
 if errorlevel 1 (echo Build failed & exit /b 1)
 echo Built dist\PadMouse.exe
 if "%SIGN_PFX%"=="" goto :eof
